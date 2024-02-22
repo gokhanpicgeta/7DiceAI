@@ -81,6 +81,8 @@ class Game:
         self.playerCount+=1
 
 
+
+    #TODO: Fix logic for distributing cards when 52 is not divisible by number of players
     def distributeCards(self):
 
         for i in range(self.playerCount):
@@ -90,6 +92,7 @@ class Game:
                 suit,faceValue = self.cards.getRand()
                 if(suit == "D" and faceValue == 7):
                     self.playerList[i].sevenDiamonds = True
+                    self.playerTurn = i
                 #print(suit,faceValue)
                 self.playerList[i].cards[suit].append(faceValue)
                 self.playerList[i].cardCount+=1
@@ -144,18 +147,13 @@ class Game:
         """
         Get the state which includes board state, card state and possibly whos turn it is?
         """
-        state = {}
-        if self.playerTurn == 0:
-            state={
-                "board": self.boardState,
-                "cards": self.playerList[0].cards
-            }
 
-        else:
-            state={
+
+        state={
                 "board": self.boardState,
-                "cards": self.playerList[1].cards
-            }
+                "cards": self.playerList[self.playerTurn].cards
+        }
+
         legalMoves = {"S": [], "C": [], "H": [], "D": []}
         for key, value in state["board"].items():
 
@@ -224,16 +222,8 @@ class Game:
                 print("Losers hand was", self.playerList[1-self.winner].cards)
                 #exit()
 
-            if self.playerTurn == 0:
-                self.playerTurn = 1
-            else:
-                self.playerTurn = 0
+        self.playerTurn = (self.playerTurn+1)% self.playerCount
 
-        else:
-            if self.playerTurn == 0:
-                self.playerTurn = 1
-            else:
-                self.playerTurn = 0
 
 
 
@@ -377,7 +367,7 @@ class SevenDiceAI():
         #TODO: choose action from available actions in class Player but might have to modify card hand logic
 
         if epsilon:
-            print("wtf is a state ", state)
+            #print("wtf is a state ", state)
             state_tuple = tuple(state['board'].items()), tuple(state['cards'].items())
             print(state_tuple)
             print(self.q)
@@ -419,7 +409,7 @@ class SevenDiceAI():
 
         #raise NotImplementedError
 
-def train(n, discount_factor=0.9):
+def train(n, num_players=2, discount_factor=0.9):
     """
     Training an AI by playing n games against itself using Q-learning with backpropagation
     :param n: Number of training games
@@ -427,20 +417,23 @@ def train(n, discount_factor=0.9):
     :return: Trained AI
     """
 
-    ai = SevenDiceAI()
+    ai = SevenDiceAI() #TODO: idk if to pass number of players into this class
 
     for _ in range(n):
         print(f"Playing training game {_+1}")
         game = Game()
-        game.addPlayer()
-        game.addPlayer()
+
+        for __ in range(num_players):
+            game.addPlayer()
+        #game.addPlayer()
         game.distributeCards()
 
         # FIGURING OUT WHO GOES FIRST WITH SEVEN DICE AND STUFF
         for i in range(len(game.playerList)):
             if game.playerList[i].sevenDiamonds:
                 game.playCard(game.playerList[i], "D", 7)
-                game.playerTurn = 1 if i == 0 else 0
+                #game.playerTurn = 1 if i == 0 else 0
+                game.playerTurn = (i+1)% num_players
 
         # Keep track of all moves made by either player in the episode
         episode_moves = []
@@ -455,26 +448,31 @@ def train(n, discount_factor=0.9):
             print("ACTION TO TAKE IS ", action)
 
             if action == "Pass":
-                game.playerTurn = 1 - game.playerTurn
+                game.playerTurn = (game.playerTurn+1)% num_players
             else:
                 game.playCard(game.playerList[game.playerTurn], action[0], action[1])
                 new_state = game.get_state()
 
             if game.winner is not None:
-                loser_score = sum(value for face_values in game.playerList[1 - game.winner].cards.values() for value in face_values)
-                total_reward = 1 * loser_score
+                rewards = [sum(value for face_values in game.playerList[player].cards.values() for value in face_values)
+                           for player in range(num_players)]
+                total_rewards = sum(rewards)
 
                 # Backpropagate rewards or penalties through the entire episode
                 for t in range(len(episode_moves)):
-                    player_turn = game.playerTurn if t % 2 == 0 else 1 - game.playerTurn
+                    #player_turn = game.playerTurn if t % 2 == 0 else 1 - game.playerTurn
                     move = episode_moves[t]
-                    ai.update(move["state"], move["action"], new_state, total_reward)
-                    total_reward *= discount_factor
+                    ai.update(move["state"], move["action"], new_state, total_rewards)
+                    total_rewards *= discount_factor
 
                 break
 
             # If the game is continuing, no rewards yet
             #elif episode_moves[-1]["state"] is not None:
+                #ai.update(episode_moves[-1]["state"], episode_moves[-1]["action"], new_state, 0)
+
+            #elif episode_moves[-1]["state"] is not None:
+                #game.playerTurn = (game.playerTurn + 1) % num_players
                 #ai.update(episode_moves[-1]["state"], episode_moves[-1]["action"], new_state, 0)
 
     print("done training")
@@ -504,7 +502,7 @@ def play(ai):
             game.playCard(game.playerList[i], "D", 7)
 
             if i == 0:
-                game.playerTurn = 1
+                game.playerTqurn = 1
             else:
                 game.playerTurn = 0
 
